@@ -26,9 +26,11 @@ VISU_INDEX = 1
 class EventSlicer:
     def __init__(self, h5f: h5py.File):
         self.h5f = h5f
+        print(h5f.filename, list(h5f.keys()))
 
         self.events = dict()
         for dset_str in ['p', 'x', 'y', 't']:
+            print('events/{}'.format(dset_str))
             self.events[dset_str] = self.h5f['events/{}'.format(dset_str)]
 
         # This is the mapping from milliseconds to event index:
@@ -179,7 +181,7 @@ class Sequence(Dataset):
                  num_bins: int = 4, transforms=[], name_idx=0, visualize=False, load_gt=False):
         assert num_bins >= 1
         assert delta_t_ms == 100
-        assert seq_path.is_dir()
+        assert seq_path.is_dir(), seq_path
         assert mode in {'train', 'test'}
         assert representation_type is not None
         '''
