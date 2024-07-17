@@ -128,6 +128,7 @@ def main(args: DictConfig):
             event_image = batch["event_volume"].to(device) # [B, 4, 480, 640]
             ground_truth_flow = batch["flow_gt"].to(device) # [B, 2, 480, 640]
             flow = model(event_image) # [B, 2, 480, 640]
+
             loss: torch.Tensor = compute_epe_error(flow, ground_truth_flow)
             print(f"batch {i} loss: {loss.item()}")
             optimizer.zero_grad()
@@ -135,36 +136,41 @@ def main(args: DictConfig):
             optimizer.step()
 
             total_loss += loss.item()
+
+            break
+
         print(f'Epoch {epoch+1}, Loss: {total_loss / len(train_data)}')
 
-    # Create the directory if it doesn't exist
-    if not os.path.exists('checkpoints'):
-        os.makedirs('checkpoints')
-    
-    current_time = time.strftime("%Y%m%d%H%M%S")
-    model_path = f"checkpoints/model_{current_time}.pth"
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
+        break
 
-    # ------------------
-    #   Start predicting
-    # ------------------
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-    flow: torch.Tensor = torch.tensor([]).to(device)
-    with torch.no_grad():
-        print("start test")
-        for batch in tqdm(test_data):
-            batch: Dict[str, Any]
-            event_image = batch["event_volume_old"].to(device)
-            batch_flow = model(event_image) # [1, 2, 480, 640]
-            flow = torch.cat((flow, batch_flow), dim=0)  # [N, 2, 480, 640]
-        print("test done")
-    # ------------------
-    #  save submission
-    # ------------------
-    file_name = "submission.npy"
-    save_optical_flow_to_npy(flow, file_name)
+    # # Create the directory if it doesn't exist
+    # if not os.path.exists('checkpoints'):
+    #     os.makedirs('checkpoints')
+    
+    # current_time = time.strftime("%Y%m%d%H%M%S")
+    # model_path = f"checkpoints/model_{current_time}.pth"
+    # torch.save(model.state_dict(), model_path)
+    # print(f"Model saved to {model_path}")
+
+    # # ------------------
+    # #   Start predicting
+    # # ------------------
+    # model.load_state_dict(torch.load(model_path, map_location=device))
+    # model.eval()
+    # flow: torch.Tensor = torch.tensor([]).to(device)
+    # with torch.no_grad():
+    #     print("start test")
+    #     for batch in tqdm(test_data):
+    #         batch: Dict[str, Any]
+    #         event_image = batch["event_volume_old"].to(device)
+    #         batch_flow = model(event_image) # [1, 2, 480, 640]
+    #         flow = torch.cat((flow, batch_flow), dim=0)  # [N, 2, 480, 640]
+    #     print("test done")
+    # # ------------------
+    # #  save submission
+    # # ------------------
+    # file_name = "submission.npy"
+    # save_optical_flow_to_npy(flow, file_name)
 
 if __name__ == "__main__":
     main()

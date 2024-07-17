@@ -172,6 +172,7 @@ cython_debug/
 
 # Input data that are too large
 data/
+data.zip
 images/
 
 # Unnecessary
