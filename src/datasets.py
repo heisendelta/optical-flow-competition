@@ -22,15 +22,12 @@ from src.utils import RepresentationType, VoxelGrid, flow_16bit_to_float
 
 VISU_INDEX = 1
 
-
 class EventSlicer:
     def __init__(self, h5f: h5py.File):
         self.h5f = h5f
-        print(h5f.filename, list(h5f.keys()))
 
         self.events = dict()
         for dset_str in ['p', 'x', 'y', 't']:
-            print('events/{}'.format(dset_str))
             self.events[dset_str] = self.h5f['events/{}'.format(dset_str)]
 
         # This is the mapping from milliseconds to event index:
@@ -199,10 +196,10 @@ class Sequence(Dataset):
             |    ├─events_left
             |    |       ├─ events.h5
             |    |       └─ rectify_map.h5
-            |    ├─ flow_forward
+            |    ├─flow_forward
             |    |       ├─ 000134.png
             |    |       |.....
-            |    └─ forward_timestamps.txt
+            |    └─forward_timestamps.txt
             ├─seq_2
             └─seq_3
         '''
@@ -306,7 +303,8 @@ class Sequence(Dataset):
         return self.height, self.width
 
     def __len__(self):
-        return len(self.timestamps_flow)
+        # Ignore the first and last images as their own
+        return len(self.timestamps_flow) # - 2
 
     def rectify_events(self, x: np.ndarray, y: np.ndarray):
         # assert location in self.locations
@@ -317,8 +315,11 @@ class Sequence(Dataset):
         assert x.max() < self.width
         assert y.max() < self.height
         return rectify_map[y, x]
-    
+
     def get_data(self, index) -> Dict[str, any]:
+        # Adjust index to skip the first element
+#         index += 1
+
         ts_start: int = self.timestamps_flow[index] - self.delta_t_us
         ts_end: int = self.timestamps_flow[index]
 
@@ -350,19 +351,40 @@ class Sequence(Dataset):
                 p, t, x_rect, y_rect)
             output['event_volume'] = event_representation
         output['name_map'] = self.name_idx
-        
-        if self.load_gt:
-            output['flow_gt'
-                ] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index])]
 
-            output['flow_gt'
-                ][0] = torch.moveaxis(output['flow_gt'][0], -1, 0)
-            output['flow_gt'
-                ][1] = torch.unsqueeze(output['flow_gt'][1], 0)
+        if self.load_gt:
+            output['flow_gt'] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index])]
+            output['flow_gt'][0] = torch.moveaxis(output['flow_gt'][0], -1, 0)
+            output['flow_gt'][1] = torch.unsqueeze(output['flow_gt'][1], 0)
+
+            flow_gt_shape = [tensor.shape for tensor in output['flow_gt']]
+            zero_flow_gt = [torch.zeros_like(tensor) for tensor in output['flow_gt']]
+
+            # # Load previous image
+            # if index > 0:
+            #     output['prev_flow_gt'] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index - 1])]
+            #     output['prev_flow_gt'][0] = torch.moveaxis(output['prev_flow_gt'][0], -1, 0)
+            #     output['prev_flow_gt'][1] = torch.unsqueeze(output['prev_flow_gt'][1], 0)
+            # else:
+            #     output['prev_flow_gt'] = zero_flow_gt
+
+            # # Load next image
+            # if index < len(self.timestamps_flow) - 1:
+            #     output['next_flow_gt'] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index + 1])]
+            #     output['next_flow_gt'][0] = torch.moveaxis(output['next_flow_gt'][0], -1, 0)
+            #     output['next_flow_gt'][1] = torch.unsqueeze(output['next_flow_gt'][1], 0)
+            # else:
+            #     output['next_flow_gt'] = zero_flow_gt
+
         return output
 
     def __getitem__(self, idx):
-        sample = self.get_data(idx)
+        # Adjust index to skip the first element
+        sample = self.get_data(idx) # idx + 1
+
+        if self.transforms:
+            sample = self.transforms(sample)
+
         return sample
 
     def get_voxel_grid(self, idx):
@@ -455,8 +477,7 @@ class SequenceRecurrent(Sequence):
         continuous_seq_idcs = []
         if self.sequence_length > 1:
             for i in range(len(self.timestamps_flow)-self.sequence_length+1):
-                diff = self.timestamps_flow[i +
-                                            self.sequence_length-1] - self.timestamps_flow[i]
+                diff = self.timestamps_flow[i + self.sequence_length-1] - self.timestamps_flow[i]
                 if diff < np.max([100000 * (self.sequence_length-1) + 1000, 101000]):
                     continuous_seq_idcs.append(i)
         else:
@@ -514,7 +535,7 @@ class SequenceRecurrent(Sequence):
             i, j, h, w = RandomCrop.get_params(
                 sample["event_volume_old"], output_size=self.crop_size)
             keys_to_crop = ["event_volume_old", "event_volume_new",
-                            "flow_gt_event_volume_old", "flow_gt_event_volume_new", 
+                            "flow_gt_event_volume_old", "flow_gt_event_volume_new",
                             "flow_gt_next",]
 
             for sample in sequence:
@@ -523,14 +544,12 @@ class SequenceRecurrent(Sequence):
                         if isinstance(value, torch.Tensor):
                             sample[key] = tf.functional.crop(value, i, j, h, w)
                         elif isinstance(value, list) or isinstance(value, tuple):
-                            sample[key] = [tf.functional.crop(
-                                v, i, j, h, w) for v in value]
+                            sample[key] = [tf.functional.crop(v, i, j, h, w) for v in value]
         return sequence
 
 
 class DatasetProvider:
-    def __init__(self, dataset_path: Path, representation_type: RepresentationType, delta_t_ms: int = 100, num_bins=4,
-                config=None, visualize=False):
+    def __init__(self, dataset_path: Path, representation_type: RepresentationType, delta_t_ms: int = 100, num_bins=4, config=None, visualize=False, transforms=None):
         test_path = Path(os.path.join(dataset_path, 'test'))
         train_path = Path(os.path.join(dataset_path, 'train'))
         assert dataset_path.is_dir(), str(dataset_path)
@@ -539,15 +558,21 @@ class DatasetProvider:
         self.config = config
         self.name_mapper_test = []
 
+        if transforms:
+            self.transforms = transforms
+        else:
+            self.transforms = tf.Compose([
+                transforms.ToTensor(),  # Convert image to PyTorch tensor
+            ])
+
         # Assemble test sequences
         test_sequences = list()
         for child in test_path.iterdir():
             self.name_mapper_test.append(str(child).split("/")[-1])
             test_sequences.append(Sequence(child, representation_type, 'test', delta_t_ms, num_bins,
-                                               transforms=[],
-                                               name_idx=len(
-                                                   self.name_mapper_test)-1,
-                                               visualize=visualize))
+                                               name_idx=len(self.name_mapper_test) - 1,
+                                               visualize=visualize,
+                                               transforms=self.transforms))
 
         self.test_dataset = torch.utils.data.ConcatDataset(test_sequences)
 
@@ -561,7 +586,7 @@ class DatasetProvider:
             extra_arg = dict()
             train_sequences.append(Sequence(Path(train_path) / seq,
                                    representation_type=representation_type, mode="train",
-                                   load_gt=True, **extra_arg))
+                                   load_gt=True, **extra_arg, transforms=self.transforms))
             self.train_dataset: torch.utils.data.ConcatDataset[Sequence] = torch.utils.data.ConcatDataset(train_sequences)
 
     def get_test_dataset(self):
@@ -595,7 +620,7 @@ def train_collate(sample_list):
         if field_name.startswith("event_volume"):
             batch[field_name] = torch.stack(
                 [sample[field_name] for sample in sample_list])
-        if field_name.startswith("flow_gt"):
+        if field_name.startswith("flow_gt") or field_name.startswith('prev_flow_gt') or field_name.startswith('next_flow_gt'):
             if all(field_name in x for x in sample_list):
                 batch[field_name] = torch.stack(
                     [sample[field_name][0] for sample in sample_list])
