@@ -1,8 +1,6 @@
 <h1 align="center">Optical Flow Prediction from the DSEC Event Camera Dataset</h1>
-<h2 align="center">深層学習 基礎講座2024 最終課題</h2>
 
-
-This project was part of a competition hosted by the Matsuo-Iwasawa Research Lab through their deep learning fundamentals course. <br> ***Our model placed 8th in the final standings of the Optical Flow Prediction competition.***
+***Our model placed 8th in the final standings of the Optical Flow Prediction competition.***
 
 ## 1. Introduction
 
